@@ -1,0 +1,1 @@
+# RAG pipeline: retrieve → build prompt → call Ollama

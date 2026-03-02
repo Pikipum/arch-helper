@@ -1,0 +1,1 @@
+# fastapi, uvicorn, chromadb, ollama, langchain-text-splitters

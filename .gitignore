@@ -1,3 +1,6 @@
 chromadb
 notes.txt
 .vscode
+.venv
+data
+backend/__pycache__
