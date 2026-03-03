@@ -54,7 +54,7 @@ if not (os.path.isdir('chromadb')):
 
 # test query
 results = collection.query(
-    query_texts=["Mixing additional audio into the microphone's audio"],
+    query_texts=["microphone not working"],
     n_results=6
 )
 print(results["ids"])
