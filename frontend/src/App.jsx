@@ -1,8 +1,9 @@
 import { useState } from "react";
 import "./App.css";
+import SearchBar from "./components/SearchBar.jsx";
 
 function App() {
-  return "hello world";
+  return <SearchBar />;
 }
 
 export default App;
