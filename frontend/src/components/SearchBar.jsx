@@ -1,7 +1,6 @@
 import { Button, TextField, Box } from "@mui/material";
 import { useNavigate } from "react-router";
 import { useEffect, useState } from "react";
-import axios from "axios";
 
 const formSx = {
   display: "flex",
@@ -40,15 +39,61 @@ const buttonSx = {
 
 const SearchBar = () => {
   //const navigate = useNavigate();
-  const [message, setMessage] = useState();
+  const [message, setMessage] = useState("");
   const [llmResponse, setLlmResponse] = useState("");
 
   const sendMessage = async (msg) => {
-    const response = await axios.post("http://localhost:8000/api/chat", {
-      message: msg,
-    });
-    console.log(response);
-    //setLlmResponse(response);
+    try {
+      const response = await fetch("http://localhost:8000/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({ message: msg }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Response status: ${response.status}`);
+      }
+
+      const reader = response.body
+        .pipeThrough(new TextDecoderStream())
+        .getReader();
+
+      let buffer = "";
+      setLlmResponse("");
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log("Stream done");
+          break;
+        }
+
+        buffer += value;
+        // Split on double-newline SSE boundaries
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop(); // keep incomplete tail in buffer
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line) continue;
+          if (line === "data: [DONE]") {
+            console.log("[DONE] received");
+            continue;
+          }
+          if (!line.startsWith("data: ")) continue;
+
+          const payload = JSON.parse(line.slice(6));
+          if (payload.type === "token") {
+            setLlmResponse((prev) => prev + payload.content);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("execution error:", e);
+    }
   };
 
   const handleSubmit = (event) => {

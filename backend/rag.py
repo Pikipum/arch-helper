@@ -12,7 +12,7 @@ vector_store = Chroma(
     collection_name=COLLECTION_NAME,
 )
 
-model = ChatOllama(model=MODEL_NAME, temperature=0)
+model = ChatOllama(model=MODEL_NAME, temperature=0, stream=True)
 
 
 @tool(response_format="content_and_artifact")

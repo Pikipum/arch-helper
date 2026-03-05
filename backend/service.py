@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncGenerator
+from langchain_core.messages import AIMessageChunk
 from rag import agent
 
 async def chat_stream(message: str, history: list[dict]) -> AsyncGenerator[str, None]:
@@ -9,17 +10,15 @@ async def chat_stream(message: str, history: list[dict]) -> AsyncGenerator[str, 
     messages.append({"role": "user", "content": message})
 
     # Stream agent events
-    for event in agent.stream(
+    async for event, metadata in agent.astream(
         {"messages": messages},
-        stream_mode="values",
+        stream_mode="messages",
     ):
-        last = event["messages"][-1]
-
-        # Only forward AI messages (skip human/tool echoes)
-        if last.type == "ai" and last.content:
+        # Only forward AI message chunks (skip human/tool echoes)
+        if isinstance(event, AIMessageChunk) and event.content:
             payload = json.dumps({
                 "type": "token",
-                "content": last.content,
+                "content": event.content,
             })
             yield f"data: {payload}\n\n"
 
