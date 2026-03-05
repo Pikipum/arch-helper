@@ -24,6 +24,7 @@ tar -xf arch-wiki-docs.pkg.tar.zst
 rm .BUILDINFO .MTREE .PKGINFO
 mv usr/share/doc/arch-wiki/html/en data/en
 rm -rf usr
+rm arch-wiki-docs.pkg.tar.zst
 ```
 
 The HTML files should end up in `data/en/`.
