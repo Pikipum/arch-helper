@@ -1,9 +1,8 @@
-import { useState } from "react";
 import "./App.css";
-import SearchBar from "./components/SearchBar.jsx";
+import ChatPage from "./components/ChatPage.jsx";
 
 function App() {
-  return <SearchBar />;
+  return <ChatPage />;
 }
 
 export default App;
