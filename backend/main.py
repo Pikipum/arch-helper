@@ -5,6 +5,9 @@ from pydantic import BaseModel
 
 from config import CORS_ORIGINS
 from service import chat_stream
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="Arch Helper API")
 
