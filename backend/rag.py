@@ -1,9 +1,11 @@
 import logging
 
-from langchain.tools import tool
-from langchain.agents import create_agent
 from langchain_chroma import Chroma
 from langchain_ollama import ChatOllama
+from langchain_core.tools import tool
+from langchain_core.messages import SystemMessage
+from langgraph.graph import StateGraph, MessagesState, END, START
+from langgraph.prebuilt import ToolNode, tools_condition
 import chromadb
 from rank_bm25 import BM25Okapi
 
@@ -37,7 +39,7 @@ def rerank_documents(docs: list, query: str, top_n: int):
 
 @tool(response_format="content_and_artifact")
 def retrieve_context(query: str):
-    """ Search the Arch Linux Wiki for relevant information. """
+    """Search the Arch Linux Wiki for relevant information about Linux, packages, configuration, troubleshooting, and hardware."""
     candidates = vector_store.similarity_search(query, k=RETRIEVAL_CANDIDATES)
     reranked = rerank_documents(candidates, query, top_n=RETRIEVAL_K)
     serialized = "\n\n".join(
@@ -56,4 +58,19 @@ SYSTEM_PROMPT = (
 
 tools = [retrieve_context]
 
-agent = create_agent(model, tools, system_prompt=SYSTEM_PROMPT)
+model_with_tools = model.bind_tools(tools)
+
+def call_model(state: MessagesState):
+    messages = [SYSTEM_PROMPT] + state["messages"]
+    response = model_with_tools.invoke(messages)
+    return {"messages": [response]}
+
+graph = StateGraph(MessagesState)
+
+graph.add_node("model", call_model)
+graph.add_node("tools", ToolNode(tools))
+
+graph.add_edge(START, "model")
+graph.add_conditional_edges("model", tools_condition)
+graph.add_edge("tools", "model")                       
+agent = graph.compile()
