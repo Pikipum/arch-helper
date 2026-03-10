@@ -1,9 +1,9 @@
 import logging
 
-from langchain.tools import tool
-from langchain.agents import create_agent
 from langchain_chroma import Chroma
 from langchain_ollama import ChatOllama
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
 import chromadb
 from rank_bm25 import BM25Okapi
 
@@ -12,11 +12,7 @@ from config import DB_PATH, COLLECTION_NAME, MODEL_NAME, RETRIEVAL_K, RETRIEVAL_
 logger = logging.getLogger(__name__)
 
 client = chromadb.PersistentClient(path=DB_PATH)
-vector_store = Chroma(
-    client=client,
-    collection_name=COLLECTION_NAME,
-)
-
+vector_store = Chroma(client=client, collection_name=COLLECTION_NAME)
 model = ChatOllama(model=MODEL_NAME, temperature=0, stream=True)
 
 
@@ -24,7 +20,6 @@ def rerank_documents(docs: list, query: str, top_n: int):
     tokenized_docs = [doc.page_content.lower().split() for doc in docs]
     bm25 = BM25Okapi(tokenized_docs)
     scores = bm25.get_scores(query.lower().split())
-
     scored_docs = sorted(enumerate(zip(scores, docs)), key=lambda x: x[1][0], reverse=True)
 
     logger.info("BM25 reranking for query: %s", query)
@@ -33,25 +28,27 @@ def rerank_documents(docs: list, query: str, top_n: int):
             "  %2d -> %2d | score=%.4f | %s",
             orig_rank + 1, new_rank, score, doc.metadata.get("source", "unknown"),
         )
-
     return [doc for _, (_, doc) in scored_docs[:top_n]]
 
-@tool(response_format="content_and_artifact")
-def retrieve_context(query: str):
-    """ Search the Arch Linux Wiki for relevant information. """
+
+@tool
+def retrieve_context(query: str) -> str:
+    """Search the Arch Linux Wiki for relevant information about Linux, packages, configuration, troubleshooting, and hardware."""
     candidates = vector_store.similarity_search(query, k=RETRIEVAL_CANDIDATES)
     reranked = rerank_documents(candidates, query, top_n=RETRIEVAL_K)
-    serialized = "\n\n".join(
+    return "\n\n".join(
         f"Source: {doc.metadata}\nContent: {doc.page_content}"
         for doc in reranked
     )
-    return serialized, reranked
 
 
 SYSTEM_PROMPT = (
     "You are a computer expert specializing in Arch Linux troubleshooting. "
-    "Use the retrieve_context tool to search the Arch Linux Wiki before answering. "
-    "Base your answers on the retrieved wiki content. Cite the source pages."
+    "You MUST call retrieve_context before answering any technical question. "
+    "For casual greetings, respond naturally without tools. "
+    "Base technical answers on retrieved wiki content. Cite source pages."
 )
 
-agent = create_agent(model, [retrieve_context], system_prompt=SYSTEM_PROMPT)
+tools = [retrieve_context]
+
+agent = create_react_agent(model, tools, prompt=SYSTEM_PROMPT)
