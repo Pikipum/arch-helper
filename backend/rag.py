@@ -3,7 +3,6 @@ import logging
 from langchain_chroma import Chroma
 from langchain_ollama import ChatOllama
 from langchain_core.tools import tool
-from langchain_core.messages import SystemMessage
 from langgraph.graph import StateGraph, MessagesState, END, START
 from langgraph.prebuilt import ToolNode, tools_condition
 import chromadb
@@ -37,45 +36,20 @@ def rerank_documents(docs: list, query: str, top_n: int):
 
     return [doc for _, (_, doc) in scored_docs[:top_n]]
 
-def rewrite_query(state: MessagesState) -> dict:
-    q = state["messages"][-1]["content"]
-    # rewrite query ?
-    new_q = q  # placeholder
-    return {"query": new_q}
-
-def retrieve_docs(state: dict) -> dict:
-    q = state["query"]
-    candidates = vector_store.similarity_search(q, k=RETRIEVAL_CANDIDATES)
-    return {"docs": candidates}
-
-def evaluate_docs(state: dict) -> dict:
-    docs = state["docs"]
-    good = rerank_documents(docs, state["query"], top_n=RETRIEVAL_K)
-    return {"good_docs": good}
-
-def format_context(state: dict) -> dict:
-    ctx = "\n\n".join(
-        f"Source: {d.metadata}\nContent: {d.page_content}"
-        for d in state["good_docs"]
-    )
-    return {"context": ctx}
-
-@tool(response_format="content_and_artifact")
-def search_arch_wiki(query: str):
-    """  
-    Search the Arch Linux Wiki for troubleshooting advice, package
-    names, configuration snippets, hardware compatibility, etc.
-    ALWAYS call this tool for any question that mentions Arch, pacman,
-    systemd, kernel, drivers, AUR, wifi, bluetooth, Xorg, etc.
-    """
+@tool
+def search_arch_wiki(query: str) -> str:
+    """Search the Arch Linux Wiki for troubleshooting advice, package names, configuration snippets, hardware compatibility, etc.
+    ALWAYS call this tool for any question that mentions Arch, pacman, systemd, kernel, drivers, AUR, wifi, bluetooth, Xorg, etc."""
     candidates = vector_store.similarity_search(query, k=RETRIEVAL_CANDIDATES)
     reranked = rerank_documents(candidates, query, top_n=RETRIEVAL_K)
-    serialized = "\n\n".join(
+    return "\n\n".join(
         f"Source: {doc.metadata}\nContent: {doc.page_content}"
         for doc in reranked
     )
-    return serialized, reranked
 
+
+tools = [search_arch_wiki]
+model_with_tools = model.bind_tools(tools)
 
 SYSTEM_PROMPT = (
     "You are a computer expert specializing in Arch Linux troubleshooting. "
@@ -84,32 +58,19 @@ SYSTEM_PROMPT = (
     "Base technical answers on retrieved wiki content. Cite source pages."
 )
 
-tools = [search_arch_wiki]
 
-model_with_tools = model.bind_tools(tools)
-
-def call_model(state: MessagesState):
-    messages = [SYSTEM_PROMPT] + state["messages"]
+def call_model(state: MessagesState) -> dict:
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + state["messages"]
     response = model_with_tools.invoke(messages)
     return {"messages": [response]}
 
 graph = StateGraph(MessagesState)
 
-graph.add_node("rewrite", rewrite_query)
-graph.add_node("retrieve", retrieve_docs)
-graph.add_node("evaluate", evaluate_docs)
-graph.add_node("format", format_context)
-graph.add_node("model", call_model)       
-
-graph.add_edge(START, "rewrite")
-graph.add_edge("rewrite", "retrieve")
-graph.add_edge("retrieve", "evaluate")
-graph.add_edge("evaluate", "format")
-graph.add_edge("format", "model")
-
+graph.add_node("model", call_model)
 graph.add_node("tools", ToolNode(tools))
-graph.add_edge("model", "tools")
+
+graph.add_edge(START, "model")
+graph.add_conditional_edges("model", tools_condition)
 graph.add_edge("tools", "model")
-graph.add_edge("model", END)
 
 agent = graph.compile()
