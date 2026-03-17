@@ -9,7 +9,7 @@ async def chat_stream(message: str, history: list[dict]) -> AsyncGenerator[str, 
     messages.append({"role": "user", "content": message})
 
     async for event, metadata in agent.astream(
-        {"messages": messages, "query": "", "docs": [], "good_docs": [], "context": ""},
+        {"messages": messages},
         stream_mode="messages",
     ):
         if isinstance(event, AIMessageChunk) and event.content:
