@@ -1,9 +1,10 @@
 import logging
+from typing import Annotated, TypedDict
 
 from langchain_chroma import Chroma
 from langchain_ollama import ChatOllama
 from langchain_core.tools import tool
-from langgraph.graph import StateGraph, MessagesState, END, START
+from langgraph.graph import StateGraph, END, START, add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 import chromadb
 from rank_bm25 import BM25Okapi
@@ -19,6 +20,12 @@ vector_store = Chroma(
 )
 
 model = ChatOllama(model=MODEL_NAME, temperature=0, stream=True)
+
+
+class AgentState(TypedDict):
+    messages: Annotated[list, add_messages]
+    rewritten_query: str
+
 
 def rerank_documents(docs: list, query: str, top_n: int):
     tokenized_docs = [doc.page_content.lower().split() for doc in docs]
@@ -58,18 +65,53 @@ SYSTEM_PROMPT = (
     "Base technical answers on retrieved wiki content. Cite source pages."
 )
 
+REWRITE_PROMPT = (
+    "Given the conversation below, rewrite the LAST user message as a standalone, "
+    "search-optimized question that includes all necessary context from the conversation. "
+    "If it is already standalone, return it unchanged. "
+    "Output ONLY the rewritten question, nothing else."
+)
 
-def call_model(state: MessagesState) -> dict:
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + state["messages"]
+
+def rewrite_query(state: AgentState) -> dict:
+    messages = state["messages"]
+    human_msgs = [m for m in messages if hasattr(m, "type") and m.type == "human"]
+
+    if len(human_msgs) <= 1:
+        return {"rewritten_query": ""}
+
+    chat_messages = [
+        m for m in messages
+        if hasattr(m, "type") and m.type in ("human", "ai")
+        and m.content and not getattr(m, "tool_calls", None)
+    ]
+
+    response = model.invoke(
+        [{"role": "system", "content": REWRITE_PROMPT}] + chat_messages
+    )
+    rewritten = response.content.strip()
+    logger.info("Query rewrite: '%s' -> '%s'", human_msgs[-1].content, rewritten)
+    return {"rewritten_query": rewritten}
+
+
+def call_model(state: AgentState) -> dict:
+    rewritten = state.get("rewritten_query", "")
+    system = SYSTEM_PROMPT
+    if rewritten:
+        system += f"\n\nThe user's question, with full context from the conversation: {rewritten}"
+    messages = [{"role": "system", "content": system}] + state["messages"]
     response = model_with_tools.invoke(messages)
     return {"messages": [response]}
 
-graph = StateGraph(MessagesState)
 
+graph = StateGraph(AgentState)
+
+graph.add_node("rewrite_query", rewrite_query)
 graph.add_node("model", call_model)
 graph.add_node("tools", ToolNode(tools))
 
-graph.add_edge(START, "model")
+graph.add_edge(START, "rewrite_query")
+graph.add_edge("rewrite_query", "model")
 graph.add_conditional_edges("model", tools_condition)
 graph.add_edge("tools", "model")
 
