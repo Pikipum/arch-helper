@@ -16,7 +16,7 @@ A RAG-based chatbot that answers Arch Linux questions using the Arch Linux Wiki 
 
 ## Demo
 
-<video controls src="demo_video.mp4" title="Title"></video>
+https://github.com/user-attachments/assets/b1ddf947-c7ce-4256-b55a-082a43975c66
 
 ## Setup
 
