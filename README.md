@@ -14,6 +14,10 @@ A RAG-based chatbot that answers Arch Linux questions using the Arch Linux Wiki 
 - Node.js 20+
 - [Ollama](https://ollama.com/) with the `mistral` model pulled (`ollama pull mistral`)
 
+## Demo
+
+<video controls src="demo_video.mp4" title="Title"></video>
+
 ## Setup
 
 ### 1. Download the Arch Wiki
